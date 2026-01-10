@@ -11,61 +11,72 @@ from postal_code_id_ingester.model.augmented import AugmentedPostalCode
 from postal_code_id_ingester.export.jsonl import write_jsonl
 
 
+async def process_village(
+    sem: asyncio.Semaphore,
+    v,
+    verbose: bool = False,
+):
+    async with sem:
+        if verbose:
+            print(f"PROCESS {v.village} ({v.village_code})")
+
+        try:
+            html = await fetch_postal_html(v.village)
+        except Exception as e:
+            if verbose:
+                print(f"  FETCH ERROR {v.village}: {e}")
+            return None
+
+        candidates = parse_postal_results(html)
+
+        for c in candidates:
+            score = match_postal_candidate(v, c)
+            if score:
+                return AugmentedPostalCode(
+                    village_code=v.village_code,
+                    postal_code=c["postal_code"],
+                    source="pos-indonesia",
+                    confidence=round(score, 3),
+                    retrieved_at=AugmentedPostalCode.now_iso(),
+                    raw=c,
+                )
+
+        if verbose:
+            print(f"  NO MATCH {v.village}")
+        return None
+
+
 async def run_ingestion(
     regions_path: str,
     output_path: str,
     limit: int | None = None,
     verbose: bool = False,
+    concurrency: int = 3,
 ):
     villages = load_villages_from_region_id(regions_path)
 
     if limit is not None:
         villages = villages[:limit]
 
-    records: list[AugmentedPostalCode] = []
+    sem = asyncio.Semaphore(concurrency)
     seen_village_codes: set[str] = set()
 
-    for idx, v in enumerate(villages, start=1):
+    tasks = []
+    for v in villages:
         if v.village_code in seen_village_codes:
-            if verbose:
-                print(f"SKIP duplicate village_code {v.village_code}")
             continue
 
-        if verbose:
-            print(f"[{idx}/{len(villages)}] {v.village} ({v.village_code})")
+        tasks.append(process_village(sem, v, verbose))
 
-        try:
-            html = await fetch_postal_html(v.village)
-        except Exception as e:
-            if verbose:
-                print("  FETCH ERROR:", e)
-            continue
+    results = await asyncio.gather(*tasks)
 
-        candidates = parse_postal_results(html)
-        matched = False
-
-        for c in candidates:
-            score = match_postal_candidate(v, c)
-            if score:
-                records.append(
-                    AugmentedPostalCode(
-                        village_code=v.village_code,
-                        postal_code=c["postal_code"],
-                        source="pos-indonesia",
-                        confidence=round(score, 3),
-                        retrieved_at=AugmentedPostalCode.now_iso(),
-                        raw=c,
-                    )
-                )
-                seen_village_codes.add(v.village_code)
-                matched = True
-                break
-
-        if verbose and not matched:
-            print(f"  NO MATCH for {v.village}")
+    records: list[AugmentedPostalCode] = []
+    for r in results:
+        if r and r.village_code not in seen_village_codes:
+            records.append(r)
+            seen_village_codes.add(r.village_code)
 
     write_jsonl(output_path, records)
-
     print(f"Done. Emitted {len(records)} records → {output_path}")
 
 
@@ -82,6 +93,13 @@ def main():
     run.add_argument("--output", required=True, help="Output JSONL file")
     run.add_argument("--limit", type=int, help="Limit number of villages")
     run.add_argument("--verbose", action="store_true")
+    run.add_argument(
+        "--concurrency",
+        type=int,
+        default=3,
+        help="Max concurrent HTTP requests (default: 3)",
+    )
+
 
     args = parser.parse_args()
 
@@ -92,6 +110,7 @@ def main():
                 output_path=args.output,
                 limit=args.limit,
                 verbose=args.verbose,
+                concurrency=args.concurrency,
             )
         )
 
