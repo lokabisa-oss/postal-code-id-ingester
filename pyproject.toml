@@ -1,0 +1,28 @@
+[project]
+name = "postal-code-id-ingester"
+version = "0.1.0"
+description = "Ingestion pipeline to augment Indonesian postal code dataset using region-id villages"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+dependencies = [
+  "lo-ingester @ git+https://github.com/lokabisa-oss/lo-ingester.git",
+  "transport-core @ git+https://github.com/lokabisa-oss/transport-core.git@main#subdirectory=bindings/python",
+  "pyquery",
+  "lxml",
+  "fuzzy-core",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+]
+
+[project.scripts]
+postal-code-id-ingester = "postal_code_id_ingester.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
