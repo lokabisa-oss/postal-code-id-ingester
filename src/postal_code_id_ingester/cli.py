@@ -9,6 +9,7 @@ from postal_code_id_ingester.sources.pos_indonesia import parse_postal_results
 from postal_code_id_ingester.matchers.region_matcher import match_postal_candidate
 from postal_code_id_ingester.model.augmented import AugmentedPostalCode
 from postal_code_id_ingester.export.jsonl import write_jsonl
+from postal_code_id_ingester.export.resume import load_seen_village_codes
 
 
 async def process_village(
@@ -59,11 +60,15 @@ async def run_ingestion(
         villages = villages[:limit]
 
     sem = asyncio.Semaphore(concurrency)
-    seen_village_codes: set[str] = set()
+    seen_village_codes: set[str] = load_seen_village_codes(output_path)
+    if verbose and seen_village_codes:
+        print(f"RESUME enabled: {len(seen_village_codes)} villages already processed")
 
     tasks = []
     for v in villages:
         if v.village_code in seen_village_codes:
+            if verbose:
+                print(f"SKIP (resume) {v.village} ({v.village_code})")
             continue
 
         tasks.append(process_village(sem, v, verbose))
