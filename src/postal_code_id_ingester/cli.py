@@ -12,8 +12,6 @@ from postal_code_id_ingester.export.jsonl import write_jsonl
 from postal_code_id_ingester.export.resume import load_seen_village_codes
 from postal_code_id_ingester.query.keywords import extract_single_word
 
-PAGE_SIZE = 25
-MAX_PAGES = 5
 
 async def process_village(
     sem: asyncio.Semaphore,
@@ -46,44 +44,34 @@ async def process_village(
             if verbose:
                 print(f"  TRY keyword='{keyword}'")
 
-            for page in range(MAX_PAGES):
-                start = page * PAGE_SIZE
-
+            try:
+                html = await fetch_postal_html(keyword)
+            except Exception as e:
                 if verbose:
-                    print(f"    PAGE start={start}")
+                    print(f"    FETCH ERROR keyword={keyword}: {e}")
+                continue
 
-                try:
-                    html = await fetch_postal_html(
-                        keyword,
-                        start=start,
-                        length=PAGE_SIZE,
-                    )
-                except Exception as e:
+            candidates = parse_postal_results(html)
+            if not candidates:
+                continue
+
+            for c in candidates:
+                score = match_postal_candidate(v, c)
+                if score:
                     if verbose:
-                        print(f"    FETCH ERROR keyword={keyword}: {e}")
-                    break
-
-                candidates = parse_postal_results(html)
-                if not candidates:
-                    break  # no more pages
-
-                for c in candidates:
-                    score = match_postal_candidate(v, c)
-                    if score:
-                        if verbose:
-                            print(
-                                f"    MATCH keyword='{keyword}' "
-                                f"postal_code={c['postal_code']} "
-                                f"score={round(score, 3)}"
-                            )
-                        return AugmentedPostalCode(
-                            village_code=v.village_code,
-                            postal_code=c["postal_code"],
-                            source="pos-indonesia",
-                            confidence=round(score, 3),
-                            retrieved_at=AugmentedPostalCode.now_iso(),
-                            raw=c,
+                        print(
+                            f"    MATCH keyword='{keyword}' "
+                            f"postal_code={c['postal_code']} "
+                            f"score={round(score, 3)}"
                         )
+                    return AugmentedPostalCode(
+                        village_code=v.village_code,
+                        postal_code=c["postal_code"],
+                        source="pos-indonesia",
+                        confidence=round(score, 3),
+                        retrieved_at=AugmentedPostalCode.now_iso(),
+                        raw=c,
+                    )
 
         if verbose:
             print(f"  NO MATCH {v.village}")
