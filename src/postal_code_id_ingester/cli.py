@@ -14,7 +14,10 @@ from postal_code_id_ingester.matchers.region_matcher import match_postal_candida
 from postal_code_id_ingester.model.augmented import AugmentedPostalCode
 from postal_code_id_ingester.export.jsonl import write_jsonl
 from postal_code_id_ingester.export.resume import load_seen_village_codes
-from postal_code_id_ingester.query.keywords import extract_single_word
+from postal_code_id_ingester.query.keywords import (
+    extract_single_word,
+    extract_prefix_keywords
+)
 
 
 async def process_village(
@@ -27,26 +30,41 @@ async def process_village(
             print(f"PROCESS {v.village} ({v.village_code})")
 
         # Keyword strategy (ORDER MATTERS)
-        keywords = [
+        raw_keywords = [
             v.village,                     # 1. default (as-is)
             v.district,                    # 2. fallback district
-            extract_single_word(v.village) # 3. fallback single-word village
         ]
 
-        tried = set()
+        # 3. progressive village prefix
+        raw_keywords.extend(extract_prefix_keywords(v.village))
+
+        # 4. progressive district prefix (optional, safer belakangan)
+        raw_keywords.extend(extract_prefix_keywords(v.district))
+
+        # 5. single word LAST fallback
+        raw_keywords.append(extract_single_word(v.village))
+
+        seen = set()
+        keywords = []
+
+        for k in raw_keywords:
+            if not k:
+                continue
+
+            k = k.strip()
+            if len(k) < 3:
+                continue
+
+            key = k.lower()
+            if key in seen:
+                continue
+
+            seen.add(key)
+            keywords.append(k)
 
         for keyword in keywords:
-            if not keyword:
-                continue
-
-            keyword = keyword.strip()
-            if not keyword or keyword in tried:
-                continue
-
-            tried.add(keyword)
-
             if verbose:
-                print(f"  TRY keyword='{keyword}'")
+                print(f"  KEYWORDS ({len(keywords)}): {keywords}")
 
             try:
                 html = await fetch_postal_html(keyword)

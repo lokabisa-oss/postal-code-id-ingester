@@ -27,3 +27,41 @@ def extract_single_word(name: str) -> str:
 
     # Pick the longest token (heuristic: most distinctive)
     return max(tokens, key=len)
+
+
+def extract_prefix_keywords(
+    name: str,
+    *,
+    min_words: int = 2,
+    max_words: int = 4,
+) -> list[str]:
+    """
+    Generate progressive prefix keywords from a place name.
+
+    Example:
+    "Matang Glumpang Dua Meunasah Dayah" ->
+    [
+        "Matang Glumpang",
+        "Matang Glumpang Dua",
+        "Matang Glumpang Dua Meunasah"
+    ]
+
+    Notes:
+    - Stopwords are removed only at the beginning.
+    - Keeps original word order.
+    - Does NOT include single-word prefixes.
+    """
+    if not name:
+        return []
+
+    cleaned = re.sub(r"[^a-zA-Z\s]", " ", name)
+    tokens = [t for t in cleaned.split() if t]
+
+    if len(tokens) < min_words:
+        return []
+
+    prefixes: list[str] = []
+    for i in range(min_words, min(len(tokens), max_words) + 1):
+        prefixes.append(" ".join(tokens[:i]))
+
+    return prefixes
