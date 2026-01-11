@@ -99,9 +99,18 @@ async def run_ingestion(
         villages = villages[:limit]
 
     sem = asyncio.Semaphore(concurrency)
-    seen_village_codes: set[str] = load_seen_village_codes(output_path)
-    if verbose and seen_village_codes:
+
+    use_resume = not regions_path.endswith("failed_regions.csv")
+
+    seen_village_codes: set[str] = (
+        load_seen_village_codes(output_path) if use_resume else set()
+    )
+
+    if verbose and use_resume and seen_village_codes:
         print(f"RESUME enabled: {len(seen_village_codes)} villages already processed")
+
+    if verbose and not use_resume:
+        print("RESUME disabled (failed-only mode)")
 
     tasks = []
     for v in villages:
