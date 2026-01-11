@@ -4,6 +4,10 @@ import asyncio
 from postal_code_id_ingester.ingest.region_id_loader import (
     load_villages_from_region_id
 )
+
+from postal_code_id_ingester.ingest.failed_loader import (
+    load_failed_villages
+)
 from postal_code_id_ingester.ingest.fetcher import fetch_postal_html
 from postal_code_id_ingester.sources.pos_indonesia import parse_postal_results
 from postal_code_id_ingester.matchers.region_matcher import match_postal_candidate
@@ -86,7 +90,10 @@ async def run_ingestion(
     verbose: bool = False,
     concurrency: int = 3,
 ):
-    villages = load_villages_from_region_id(regions_path)
+    if regions_path.endswith("failed_regions.csv"):
+        villages = load_failed_villages(regions_path)
+    else:
+        villages = load_villages_from_region_id(regions_path)
 
     if limit is not None:
         villages = villages[:limit]
