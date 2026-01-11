@@ -19,11 +19,15 @@ from postal_code_id_ingester.query.keywords import (
     extract_prefix_keywords,
     normalize_city_name,
 )
+from postal_code_id_ingester.ingest.override_loader import load_override_rules
+
 
 
 async def process_village(
     sem: asyncio.Semaphore,
     v,
+    override_rules: dict,
+    enable_overrides: bool,
     verbose: bool = False,
 ):
     async with sem:
@@ -107,6 +111,58 @@ async def process_village(
                         raw=c,
                     )
 
+        # ---------- PHASE 2: OVERRIDE (LAST RESORT) ----------
+        if enable_overrides:
+            if verbose:
+                print(f"  OVERRIDE HIT for {v.village_code}")
+
+            rule = None
+
+            # village-level override
+            rule = override_rules.get(("village", v.village_code))
+
+            # district-level override (fallback)
+            if not rule and hasattr(v, "district_code"):
+                rule = override_rules.get(("district", v.district_code))
+
+            if rule:
+                if verbose:
+                    print(
+                        f"  OVERRIDE keyword='{rule.postal_alias}' "
+                        f"mode={rule.match_mode}"
+                    )
+
+                try:
+                    html = await fetch_postal_html(rule.postal_alias)
+                except Exception as e:
+                    if verbose:
+                        print(f"    OVERRIDE FETCH ERROR: {e}")
+                    return None
+
+                candidates = parse_postal_results(html)
+
+                for c in candidates:
+                    score = match_postal_candidate(
+                        v,
+                        c,
+                        mode=rule.match_mode,
+                    )
+                    if score:
+                        if verbose:
+                            print(
+                                f"    OVERRIDE MATCH "
+                                f"postal_code={c['postal_code']} "
+                                f"score={score}"
+                            )
+                        return AugmentedPostalCode(
+                            village_code=v.village_code,
+                            postal_code=c["postal_code"],
+                            source="pos-indonesia-override",
+                            confidence=score,
+                            retrieved_at=AugmentedPostalCode.now_iso(),
+                            raw=c,
+                        )
+
         if verbose:
             print(f"  NO MATCH {v.village}")
 
@@ -116,6 +172,8 @@ async def process_village(
 async def run_ingestion(
     regions_path: str,
     output_path: str,
+    override_path: str | None = None,
+    enable_overrides: bool = False,
     limit: int | None = None,
     verbose: bool = False,
     concurrency: int = 3,
@@ -142,6 +200,12 @@ async def run_ingestion(
     if verbose and not use_resume:
         print("RESUME disabled (failed-only mode)")
 
+    override_rules = {}
+    if enable_overrides and override_path:
+        override_rules = load_override_rules(override_path)
+        if verbose:
+            print(f"OVERRIDES loaded: {len(override_rules)} rules")
+
     tasks = []
     for v in villages:
         if v.village_code in seen_village_codes:
@@ -149,7 +213,15 @@ async def run_ingestion(
                 print(f"SKIP (resume) {v.village} ({v.village_code})")
             continue
 
-        tasks.append(process_village(sem, v, verbose))
+        tasks.append(
+            process_village(
+                sem,
+                v,
+                override_rules,
+                enable_overrides,
+                verbose,
+            )
+        )
 
     results = await asyncio.gather(*tasks)
 
@@ -182,6 +254,16 @@ def main():
         default=3,
         help="Max concurrent HTTP requests (default: 3)",
     )
+    run.add_argument(
+        "--enable-overrides",
+        action="store_true",
+        help="Enable postal name override as last resort",
+    )
+
+    run.add_argument(
+        "--override-table",
+        help="CSV file containing postal override rules",
+    )
 
 
     args = parser.parse_args()
@@ -191,6 +273,8 @@ def main():
             run_ingestion(
                 regions_path=args.regions,
                 output_path=args.output,
+                override_path=args.override_table,
+                enable_overrides=args.enable_overrides,
                 limit=args.limit,
                 verbose=args.verbose,
                 concurrency=args.concurrency,
