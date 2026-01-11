@@ -15,6 +15,7 @@ def load_villages_from_region_id(
         for row in reader:
             village_code = (row.get("village_code") or "").strip()
             village = (row.get("village_name") or "").strip()
+            district_code = (row.get("district_code") or "").strip()
             district = (row.get("district_name") or "").strip()
             city = (row.get("regency_name") or "").strip()
             province = (row.get("province_name") or "").strip()
@@ -30,6 +31,7 @@ def load_villages_from_region_id(
                 VillageInput(
                     village_code=village_code,
                     village=village,
+                    district_code=district_code,
                     district=district,
                     city=city,
                     province=province,

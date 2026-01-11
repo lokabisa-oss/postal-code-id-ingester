@@ -4,6 +4,7 @@ from dataclasses import dataclass
 class VillageInput:
     village_code: str
     village: str
+    district_code: str
     district: str
     city: str
     province: str

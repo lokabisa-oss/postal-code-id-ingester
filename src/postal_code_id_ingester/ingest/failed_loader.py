@@ -12,6 +12,7 @@ def load_failed_villages(path: str) -> list[VillageInput]:
                 VillageInput(
                     village_code=row["village_code"],
                     village=row["village"],
+                    district_code=row["district_code"],
                     district=row["district"],
                     city=row["city"],
                     province=row["province"],

@@ -48,20 +48,10 @@ def match_postal_candidate(
     # ----------------------------
     # DISTRICT + VILLAGE (TOLERANT)
     # ----------------------------
-    if mode == "district_village":
-        village_score = similarity(
+    if mode == "village_only":
+        score = similarity(
             village.village,
             candidate.get("village", ""),
-        )
-
-        district_score = similarity(
-            village.district,
-            candidate.get("district", ""),
-        )
-
-        score = (
-            district_score * 0.7
-            + village_score * 0.3
         )
 
         if score >= 0.65:
