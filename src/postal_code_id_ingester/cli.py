@@ -16,7 +16,8 @@ from postal_code_id_ingester.export.jsonl import write_jsonl
 from postal_code_id_ingester.export.resume import load_seen_village_codes
 from postal_code_id_ingester.query.keywords import (
     extract_single_word,
-    extract_prefix_keywords
+    extract_prefix_keywords,
+    normalize_city_name,
 )
 
 
@@ -44,9 +45,14 @@ async def process_village(
         # 5. single word LAST fallback
         raw_keywords.append(extract_single_word(v.village))
 
+        # 6) city-level LAST RESORT
+        city_keyword = normalize_city_name(v.city)
+        if city_keyword:
+            raw_keywords.append(city_keyword)
+
+        # ---- normalize & dedup ----
         seen = set()
         keywords = []
-
         for k in raw_keywords:
             if not k:
                 continue
@@ -62,9 +68,11 @@ async def process_village(
             seen.add(key)
             keywords.append(k)
 
+        if verbose:
+            print(f"  KEYWORDS ({len(keywords)}): {keywords}")
+
         for keyword in keywords:
-            if verbose:
-                print(f"  KEYWORDS ({len(keywords)}): {keywords}")
+            is_city_level = (keyword == city_keyword)
 
             try:
                 html = await fetch_postal_html(keyword)
@@ -78,19 +86,23 @@ async def process_village(
                 continue
 
             for c in candidates:
-                score = match_postal_candidate(v, c)
+                score = match_postal_candidate(
+                    v, 
+                    c,
+                    mode="city" if is_city_level else "village",
+                )
                 if score:
                     if verbose:
                         print(
                             f"    MATCH keyword='{keyword}' "
                             f"postal_code={c['postal_code']} "
-                            f"score={round(score, 3)}"
+                            f"score={score}"
                         )
                     return AugmentedPostalCode(
                         village_code=v.village_code,
                         postal_code=c["postal_code"],
                         source="pos-indonesia",
-                        confidence=round(score, 3),
+                        confidence=score,
                         retrieved_at=AugmentedPostalCode.now_iso(),
                         raw=c,
                     )

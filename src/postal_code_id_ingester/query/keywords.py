@@ -9,6 +9,13 @@ STOPWORDS = {
     "dusun",
 }
 
+CITY_PREFIXES = {
+    "kabupaten",
+    "kab",
+    "kota",
+    "city",
+}
+
 
 def extract_single_word(name: str) -> str:
     """
@@ -18,14 +25,12 @@ def extract_single_word(name: str) -> str:
     if not name:
         return ""
 
-    # Normalize: lowercase, remove non-letter characters
     cleaned = re.sub(r"[^a-zA-Z\s]", " ", name.lower())
     tokens = [t for t in cleaned.split() if t and t not in STOPWORDS]
 
     if not tokens:
         return ""
 
-    # Pick the longest token (heuristic: most distinctive)
     return max(tokens, key=len)
 
 
@@ -36,20 +41,8 @@ def extract_prefix_keywords(
     max_words: int = 4,
 ) -> list[str]:
     """
-    Generate progressive prefix keywords from a place name.
-
-    Example:
-    "Matang Glumpang Dua Meunasah Dayah" ->
-    [
-        "Matang Glumpang",
-        "Matang Glumpang Dua",
-        "Matang Glumpang Dua Meunasah"
-    ]
-
-    Notes:
-    - Stopwords are removed only at the beginning.
-    - Keeps original word order.
-    - Does NOT include single-word prefixes.
+    Generate progressive prefix keywords.
+    'A B C D' -> ['A B', 'A B C', 'A B C D']
     """
     if not name:
         return []
@@ -60,8 +53,28 @@ def extract_prefix_keywords(
     if len(tokens) < min_words:
         return []
 
-    prefixes: list[str] = []
+    prefixes = []
+    for i in range(min(len(tokens), max_words), min_words - 1, -1):
+        # build from shorter to longer but caller will dedup/order
+        pass
+
+    # build in ascending length (2,3,4)
+    prefixes = []
     for i in range(min_words, min(len(tokens), max_words) + 1):
         prefixes.append(" ".join(tokens[:i]))
 
     return prefixes
+
+
+def normalize_city_name(name: str) -> str:
+    """
+    Remove administrative prefixes from city/regency names.
+    'Kabupaten Aceh Selatan' -> 'Aceh Selatan'
+    'Kota Banda Aceh' -> 'Banda Aceh'
+    """
+    if not name:
+        return ""
+
+    cleaned = re.sub(r"[^a-zA-Z\s]", " ", name.lower())
+    parts = [p for p in cleaned.split() if p and p not in CITY_PREFIXES]
+    return " ".join(parts).title()
