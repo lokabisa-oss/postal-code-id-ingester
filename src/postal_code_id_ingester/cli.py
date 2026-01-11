@@ -10,7 +10,10 @@ from postal_code_id_ingester.matchers.region_matcher import match_postal_candida
 from postal_code_id_ingester.model.augmented import AugmentedPostalCode
 from postal_code_id_ingester.export.jsonl import write_jsonl
 from postal_code_id_ingester.export.resume import load_seen_village_codes
+from postal_code_id_ingester.query.keywords import extract_single_word
 
+PAGE_SIZE = 25
+MAX_PAGES = 5
 
 async def process_village(
     sem: asyncio.Semaphore,
@@ -21,29 +24,70 @@ async def process_village(
         if verbose:
             print(f"PROCESS {v.village} ({v.village_code})")
 
-        try:
-            html = await fetch_postal_html(v.village)
-        except Exception as e:
+        # Keyword strategy (ORDER MATTERS)
+        keywords = [
+            v.village,                     # 1. default (as-is)
+            v.district,                    # 2. fallback district
+            extract_single_word(v.village) # 3. fallback single-word village
+        ]
+
+        tried = set()
+
+        for keyword in keywords:
+            if not keyword:
+                continue
+
+            keyword = keyword.strip()
+            if not keyword or keyword in tried:
+                continue
+
+            tried.add(keyword)
+
             if verbose:
-                print(f"  FETCH ERROR {v.village}: {e}")
-            return None
+                print(f"  TRY keyword='{keyword}'")
 
-        candidates = parse_postal_results(html)
+            for page in range(MAX_PAGES):
+                start = page * PAGE_SIZE
 
-        for c in candidates:
-            score = match_postal_candidate(v, c)
-            if score:
-                return AugmentedPostalCode(
-                    village_code=v.village_code,
-                    postal_code=c["postal_code"],
-                    source="pos-indonesia",
-                    confidence=round(score, 3),
-                    retrieved_at=AugmentedPostalCode.now_iso(),
-                    raw=c,
-                )
+                if verbose:
+                    print(f"    PAGE start={start}")
+
+                try:
+                    html = await fetch_postal_html(
+                        keyword,
+                        start=start,
+                        length=PAGE_SIZE,
+                    )
+                except Exception as e:
+                    if verbose:
+                        print(f"    FETCH ERROR keyword={keyword}: {e}")
+                    break
+
+                candidates = parse_postal_results(html)
+                if not candidates:
+                    break  # no more pages
+
+                for c in candidates:
+                    score = match_postal_candidate(v, c)
+                    if score:
+                        if verbose:
+                            print(
+                                f"    MATCH keyword='{keyword}' "
+                                f"postal_code={c['postal_code']} "
+                                f"score={round(score, 3)}"
+                            )
+                        return AugmentedPostalCode(
+                            village_code=v.village_code,
+                            postal_code=c["postal_code"],
+                            source="pos-indonesia",
+                            confidence=round(score, 3),
+                            retrieved_at=AugmentedPostalCode.now_iso(),
+                            raw=c,
+                        )
 
         if verbose:
             print(f"  NO MATCH {v.village}")
+
         return None
 
 
