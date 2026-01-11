@@ -10,7 +10,10 @@ from postal_code_id_ingester.ingest.failed_loader import (
 )
 from postal_code_id_ingester.ingest.fetcher import fetch_postal_html
 from postal_code_id_ingester.sources.pos_indonesia import parse_postal_results
-from postal_code_id_ingester.matchers.region_matcher import match_postal_candidate
+from postal_code_id_ingester.matchers.region_matcher import (
+    match_postal_candidate,
+    match_postal_candidate_override
+)
 from postal_code_id_ingester.model.augmented import AugmentedPostalCode
 from postal_code_id_ingester.export.jsonl import write_jsonl
 from postal_code_id_ingester.export.resume import load_seen_village_codes
@@ -142,10 +145,11 @@ async def process_village(
                 candidates = parse_postal_results(html)
 
                 for c in candidates:
-                    score = match_postal_candidate(
+                    score = match_postal_candidate_override(
                         v,
                         c,
                         mode=rule.match_mode,
+                        postal_alias=rule.postal_alias,
                     )
                     if score:
                         if verbose:
