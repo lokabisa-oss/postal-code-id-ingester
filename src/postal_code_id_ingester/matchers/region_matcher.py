@@ -16,11 +16,16 @@ def match_postal_candidate(
     otherwise return None.
 
     Modes:
-    - village (default): village + district + province
-    - city: district + city only (LAST RESORT)
+    - village: village + district + province (default)
+    - district_village: district-dominant, village tolerant
+    - district_only: district + city ONLY (no village)
+    - city: last-resort city-level matching
     """
 
-    if mode == "city":
+    # ----------------------------
+    # CITY / DISTRICT ONLY MODES
+    # ----------------------------
+    if mode in ("city", "district_only"):
         district_score = similarity(
             village.district,
             candidate.get("district", ""),
@@ -40,7 +45,32 @@ def match_postal_candidate(
             return round(score, 3)
         return None
 
-    # ---- default village-level matching ----
+    # ----------------------------
+    # DISTRICT + VILLAGE (TOLERANT)
+    # ----------------------------
+    if mode == "district_village":
+        village_score = similarity(
+            village.village,
+            candidate.get("village", ""),
+        )
+
+        district_score = similarity(
+            village.district,
+            candidate.get("district", ""),
+        )
+
+        score = (
+            district_score * 0.7
+            + village_score * 0.3
+        )
+
+        if score >= 0.65:
+            return round(score, 3)
+        return None
+
+    # ----------------------------
+    # DEFAULT VILLAGE MODE
+    # ----------------------------
     village_score = similarity(
         village.village,
         candidate.get("village", ""),
